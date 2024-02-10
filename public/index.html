@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vocablo</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC"
+      crossorigin="anonymous"
+    />
+  </head>
+  <body>
+    <div class="container mt-2">
+      <h1 class="text-center">Vocablo</h1>
+
+      <div class="mb-3">
+        <label for="name" class="form-label">Name</label>
+        <input
+          type="text"
+          class="form-control"
+          id="name"
+          placeholder="Enter your name"
+        />
+      </div>
+
+      <div>
+        <button class="btn btn-primary w-100" id="enterLobby">
+          Enter into Lobby
+        </button>
+      </div>
+    </div>
+
+    <script>
+
+        const userId = localStorage.getItem("userId");
+
+        if (userId){
+          window.location.href = `/lobby`;
+        }
+
+
+      const enterLobby = document.getElementById("enterLobby");
+
+    //   const ws = new WebSocket("ws://localhost:3000");
+
+      const name = document.getElementById("name");
+
+      enterLobby.addEventListener("click", () => {
+
+        if (!name.value || name.value?.trim() === ""){
+          alert("Please enter your name");
+          return;
+        }
+
+        enterLobby.disabled = true;
+
+        fetch("/api/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: name.value,
+          }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+
+            const {userId, name } = data;
+
+            localStorage.setItem("userId", userId);
+            localStorage.setItem("name", name);
+
+            window.location.href = `/lobby`;
+          });
+      });
+    </script>
+  </body>
+</html>
