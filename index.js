@@ -3,12 +3,21 @@ const WebSocket = require("ws");
 const app = express();
 const { v4: uuidv4 } = require("uuid");
 const generateUniqueId = require("./utils/generateId");
+const { getValidWordsFromBoard } = require("./utils/word");
+const emitters = require("./socket/emitters");
+const receivers = require("./socket/receivers");
 
 app.use(express.static("public"));
 app.use(express.json());
 
-const {createUser, getUser} = require("./store/user");
-const {createRoom, getRoom, addMemberToRoom} = require("./store/room");
+const { createUser, getUser } = require("./store/user");
+const {
+  createRoom,
+  getRoom,
+  addMemberToRoom,
+  updateBoard,
+  getRoomByUserId,
+} = require("./store/room");
 
 app.use((req, res, next) => {
   console.log(
@@ -18,6 +27,7 @@ app.use((req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
 const server = app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
   const url = `http://localhost:${PORT}`;
@@ -26,69 +36,87 @@ const server = app.listen(PORT, () => {
 
 const wss = new WebSocket.Server({ server });
 
-const rooms = new Map();
-
 const usersInLobby = new Map();
 
 wss.on("connection", (ws) => {
   console.log("New client connected");
 
-  ws.on("message", async(message) => {
+  ws.on("message", async (message) => {
     const data = JSON.parse(message);
+    console.log("Received:", JSON.stringify(data));
+
     const { type } = data;
-    if (type === "joinedLobby") {
-      const { userId } = data;
-      usersInLobby.set(userId, ws);
-    }
 
-    if (type === "joinedGame") {
-      const { roomId, userId } = data;
-      // const room = rooms.get(roomId);
-      // const ws = usersInLobby.get(room.createdBy);
-
-      const room = await getRoom(roomId, true);
-
-      ws.send(
-        JSON.stringify({
-          type: "memberDetails",
-          members: room.members,
-        })
-      );
-    }
-
-    console.log("Received:", data);
+    receivers.mapReceivers(ws, type, data);
+    
   });
 
-  ws.on("close", () => {
+  ws.on("close", async () => {
     console.log("Client disconnected");
 
-    usersInLobby.forEach((value, key) => {
-      if (value === ws) {
-        usersInLobby.delete(key);
-      }
-    });
+    const connection = Array.from(usersInLobby).find(
+      ([key, value]) => value === ws
+    );
+
+    if (!connection) {
+      return;
+    }
+
+    const userId = connection[0];
+
+    const room = await getRoomByUserId(userId);
+
+    if (room) {
+      room.members.forEach((member) => {
+        const ws = usersInLobby.get(member);
+        if (!ws) {
+          return;
+        }
+
+        if (member === userId) {
+          ws.send(
+            JSON.stringify({
+              type: "leftRoom",
+            })
+          );
+        } else {
+          ws.send(
+            JSON.stringify({
+              type: "memberLeft",
+              member,
+            })
+          );
+        }
+        usersInLobby.delete(userId);
+      });
+    }
   });
 });
-
-const users = new Map();
 
 app.post("/api/login", async (req, res) => {
   const name = req.body.name;
 
   const userId = uuidv4();
 
-  await createUser({name, userId});
-
-  res.json({ name, userId });
+  try {
+    await createUser({ name, userId });
+    res.json({ name, userId });
+  } catch (e) {
+    console.log(e);
+    res.status(500).send("Internal Server Error");
+  }
 });
 
-app.post("/api/room/create", async(req, res) => {
+app.post("/api/room/create", async (req, res) => {
   const { userId } = req.body;
 
   const room = {
     roomId: generateUniqueId({ length: 6 }),
     createdBy: userId,
     members: [userId],
+    board: JSON.stringify([]),
+    scores: JSON.stringify([]),
+    usedWords: JSON.stringify([]),
   };
 
   await createRoom(room);
@@ -96,11 +124,10 @@ app.post("/api/room/create", async(req, res) => {
   res.json(room);
 });
 
-app.post("/api/room/join", async(req, res) => {
+app.post("/api/room/join", async (req, res) => {
   const { roomId, name, userId } = req.body;
 
   const room = await getRoom(roomId);
-
 
   if (!room) {
     return res.status(404).json({ message: "Room not found" });
@@ -110,15 +137,7 @@ app.post("/api/room/join", async(req, res) => {
 
   const ws = usersInLobby.get(room.createdBy);
 
-  ws.send(
-    JSON.stringify({
-      type: "memberJoined",
-      member: {
-        name,
-        userId,
-      },
-    })
-  );
+  emitters.emitMemberJoined(ws, { name, userId });
 
   res.json({ message: "Joined room" });
 });
@@ -128,12 +147,7 @@ app.post("/api/room/startGame", (req, res) => {
 
   members.forEach((member) => {
     const ws = usersInLobby.get(member.userId);
-    ws.send(
-      JSON.stringify({
-        type: "gameStarted",
-        roomId,
-      })
-    );
+    emitters.emitGameStarted(ws, roomId);
   });
 
   res.json({ message: "Game started" });

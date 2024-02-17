@@ -34,6 +34,8 @@ const getRoom = async (roomId, populateMembers = false) => {
       members.push(user);
     }
     room.members = members;
+    room.board = JSON.parse(room.board);
+    room.scores = JSON.parse(room.scores||"[]");
   }
   return room;
 };
@@ -45,8 +47,40 @@ const addMemberToRoom = async (roomId, userId) => {
   await updateDoc(roomRef, { members: room.members });
 };
 
+const updateBoard = async (roomId, board) => {
+  const room = await getRoom(roomId);
+  const roomRef = doc(db, "rooms", room.id);
+  await updateDoc(roomRef, { board:JSON.stringify(board) });
+};
+
+const getRoomByUserId = async (userId, populateMembers=false) => {
+  const q = query(roomCollection, where("members", "array-contains", userId));
+  const querySnapshot = await getDocs(q);
+  let room;
+  querySnapshot.forEach((doc) => {
+    room = doc.data();
+    room.id = doc.id;
+  });
+  if (populateMembers) {
+    const members = [];
+    for (const memberId of room.members) {
+      const user = await getUser(memberId);
+      members.push(user);
+    }
+    room.members = members;
+    room.board = JSON.parse(room.board);
+    room.scores = JSON.parse(room.scores||"[]");
+  }
+  return room;
+};
+
+
+
+
 module.exports = {
   createRoom,
   getRoom,
   addMemberToRoom,
+  updateBoard,
+  getRoomByUserId,
 };
