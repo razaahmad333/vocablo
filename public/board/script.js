@@ -1,6 +1,7 @@
 const rows = localStorage.getItem("rows") || 7;
 const userId = localStorage.getItem("userId");
 const roomId = new URLSearchParams(window.location.search).get("roomId");
+const name = localStorage.getItem("name");
 
 if (!userId) {
   window.location.href = "/";
@@ -10,19 +11,25 @@ if (!roomId) {
   window.location.href = "/lobby";
 }
 
-// document.getElementById("h1").innerHTML = userId;
+if (!name) {
+  window.location.href = "/";
+}
+
+const messageEle = document.getElementById("message");
+messageEle.innerHTML = "Waiting for other players to join";
+document.getElementById("h1").innerHTML = "Welcome to Vocablo <br/> " + name;
 
 let members = [];
 let gameBoardState = [];
 let scores = [];
 let currentPlayerIndex = 0;
-
+let isGameStarted = false;
 let interval;
 
 const getInitialBoardState = (rows) => {
   const arr = [];
   for (let i = 0; i < rows; i++) {
-    arr.push(new Array(rows).fill(""));
+    arr.push(new Array(rows).fill(" "));
   }
   return arr;
 };
@@ -34,15 +41,30 @@ const $RECEIVERS = {
   BOARD_CHANGED: "boardChanged",
   BOARD_SAVED: "boardSaved",
   MEMBER_LEFT: "memberLeft",
+  MEMBER_SUBMITTED: "memberSubmitted",
 };
 
 const receiveMessage = (type, data) => {
   switch (type) {
     case $RECEIVERS.ROOM_DETAIL_SHARED: {
+      
+      console.log({isGameStarted})
+
+      if(isGameStarted){
+        const lastJoinee = data.lastJoinee;
+        const member = members.find((member) => member.userId === lastJoinee);
+        messageEle.innerHTML = member?.name + " has joined the game";
+        return;
+      }
+      
       gameBoardState = data.board;
+
+      messageEle.innerHTML = "All players have joined the game";
+
       if (gameBoardState.length === 0) {
         gameBoardState = getInitialBoardState(rows);
       }
+      isGameStarted = true;
       updateGameBoard(gameBoardState);
 
       members = data.members;
@@ -50,7 +72,8 @@ const receiveMessage = (type, data) => {
       updateTimerAndPlayer(true);
 
       scores = data.scores;
-      // updateScoreBoard(scores);
+      updateScoreBoard(scores);
+
       break;
     }
     case $RECEIVERS.BOARD_CHANGED: {
@@ -61,9 +84,17 @@ const receiveMessage = (type, data) => {
     case $RECEIVERS.BOARD_SAVED: {
       gameBoardState = data.board;
       updateGameBoard(gameBoardState);
-      updateTimerAndPlayer();
       scores = data.scores;
-      // updateScoreBoard(scores);
+
+      updateScoreBoard(scores);
+
+      const scoringWords = data.scoringWords;
+      showScoringWords(scoringWords);
+
+      setTimeout(() => {
+        updateTimerAndPlayer(false, data.currentPlayerIndex);
+      } , 1000); 
+
       break;
     }
     case $RECEIVERS.MEMBER_LEFT: {
@@ -72,10 +103,14 @@ const receiveMessage = (type, data) => {
         return;
       }
 
-      const alert_ok = alert("Player " + member.name + " has left the game");
-      console.log(alert_ok);
-      window.location.href = "/lobby";
+      messageEle.innerHTML = "Player " + member.name + " has left the game";
       break;
+    }
+
+    case $RECEIVERS.MEMBER_SUBMITTED: {
+      clearInterval(interval);
+      const member = members[data.currentPlayerIndex];
+      document.getElementById("message").innerHTML = member.name + " has submitted the board";      
     }
     default:
       break;
@@ -120,43 +155,29 @@ const emitMessage = (type, data) => {
 };
 
 ws.onopen = () => {
-  // console.log("Connected to server");
+  console.log("Connected to server");
   emitMessage($EMITTER.JOINED_GAME, { roomId, userId });
 };
 
 ws.onmessage = (event) => {
-  // console.log("Received:", event.data);
   const data = JSON.parse(event.data);
   const { type } = data;
   receiveMessage(type, data);
 };
 
-// const timerProgress = document.getElementById("timerProgress");
-
-// const timer = 10000; // milliseconds
-// const step = 100; // milliseconds
-
-// let time = 0;
-// let interval = setInterval(() => {
-//   time += step;
-//   timerProgress.style.width = `${(time / timer) * 100}%`;
-
-//   if (time >= timer) {
-//     clearInterval(interval);
-//     currentPlayerIndex = (currentPlayerIndex + 1) % members.length;
-//   }
-// }, step);
-
 const submitButton = document.getElementById("submit");
 
 submitButton.addEventListener("click", () => {
-  updateTimerAndPlayer();
-  emitMessage($EMITTER.SAVED_BOARD, { roomId, board: gameBoardState, userId });
+  submitButton.disabled = true;
+  clearInterval(interval);
+  emitMessage($EMITTER.SAVED_BOARD, { roomId, board: gameBoardState, userId,currentPlayerIndex  });
 });
 
-function updateTimerAndPlayer(init = false) {
-  currentPlayerIndex = init ? 0 : (currentPlayerIndex + 1) % members.length;
+function updateTimerAndPlayer(init = false, playerIndex) {
+  currentPlayerIndex = init ? 0 : playerIndex;
+
   const currentPlayer = members[currentPlayerIndex];
+  
   const currentPlayerName = document.getElementById("currentPlayerName");
   currentPlayerName.textContent = "Turn: " + currentPlayer.name;
 
@@ -166,7 +187,7 @@ function updateTimerAndPlayer(init = false) {
 
   const timerProgress = document.getElementById("timerProgress");
   timerProgress.style.width = "0%";
-  const timer = 10000; // milliseconds
+  const timer = 30*1000; // milliseconds
   const step = 100; // milliseconds
 
   let time = 0;
@@ -174,24 +195,36 @@ function updateTimerAndPlayer(init = false) {
   interval = setInterval(() => {
     time += step;
     timerProgress.style.width = `${(time / timer) * 100}%`;
-
+    timerProgress.innerHTML = `${Math.floor((time / timer) * 100)}%`;
     if (time >= timer) {
       clearInterval(interval);
-      currentPlayerIndex = (currentPlayerIndex + 1) % members.length;
-      // updateTimerAndPlayer();
+      emitMessage($EMITTER.SAVED_BOARD, { roomId, board: gameBoardState, userId, currentPlayerIndex });      
     }
   }, step);
 
   if (userId === currentPlayer.userId) {
     submitButton.disabled = false;
+    document.getElementById("message").innerHTML = "Your turn";
+    document.getElementById("gameBoard").style.pointerEvents = "auto";
   } else {
     submitButton.disabled = true;
+    document.getElementById("gameBoard").style.pointerEvents = "none";
   }
+}
+
+function showScoringWords(words) {
+  if (words.length === 0) {
+    messageEle.innerHTML = "No scoring words found";
+    return;
+  }
+  messageEle.innerHTML = ` <b>Scoring words:</b> ${words.join(", ")} <br> <b> Scores gained:</b> ${words.join("").length} points `;
 }
 
 function updateScoreBoard(scores) {
   const scoreBoard = document.getElementById("scoreBoard");
   const tbody = scoreBoard.querySelector("tbody");
+
+  tbody.innerHTML = "";
 
   scores.forEach((row, index) => {
     const tr = document.createElement("tr");
@@ -222,7 +255,7 @@ function updateScoreBoard(scores) {
 function initScoreBoard(members) {
   const scoreBoard = document.getElementById("scoreBoard");
   const thead = scoreBoard.querySelector("thead");
-
+  thead.innerHTML = "";
   members.forEach((player) => {
     const th = document.createElement("th");
     th.textContent = player.name;
@@ -233,9 +266,9 @@ function initScoreBoard(members) {
 function init() {
   const gameBoardContainer = document.getElementById("gameBoard");
 
-  const windowWidth = window.innerWidth;
+  const windowWidth = window.innerWidth > 1000 ? 400 : window.innerWidth;
 
-  const cellSize = (windowWidth - 130) / rows;
+  const cellSize = (windowWidth - 50) / rows;
 
   console.log(cellSize);
 
@@ -260,19 +293,19 @@ function init() {
 
   inputs.forEach((input, index) => {
     if (index === 0) {
-      console.log(input);
       input.focus();
     }
 
     input.addEventListener("input", (e) => {
       inputs[index].style.outlineColor = "black";
 
-      if (e.target.value.length > 1) {
-        e.target.value = e.target.value.slice(0, 1);
+      const trimmedVal = e.target.value.trim();
+      if (trimmedVal.length > 1) {
+        e.target.value = trimmedVal.slice(0, 1);
       }
 
-      if (Number.isInteger(parseInt(e.target.value))) {
-        e.target.value = "";
+      if (Number.isInteger(parseInt(trimmedVal))) {
+        e.target.value = " ";
         inputs[index].style.outlineColor = "red";
       }
 
@@ -297,6 +330,8 @@ function init() {
         inputs[index + rows].focus();
       } else if (e.key === "ArrowUp") {
         inputs[index - rows].focus();
+      } else {
+        console.log(e.key);
       }
     });
   });
@@ -308,7 +343,13 @@ function updateGameBoard(gameBoardState) {
   const inputs = gameBoardContainer.querySelectorAll("input");
 
   inputs.forEach((input, index) => {
-    input.value = gameBoardState[Math.floor(index / rows)][index % rows];
+    const val = gameBoardState[Math.floor(index / rows)][index % rows];
+    if(val !== " "){
+      input.disabled = true;
+      input.style.backgroundColor = "lightgray";
+      input.style.pointerEvents = "none";
+    }
+      input.value = val === " " ? "" : val;
   });
 }
 

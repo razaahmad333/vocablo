@@ -1,14 +1,23 @@
-exports.emitRoomDetails = (ws, room) => {
-  ws.send(
+exports.emitRoomDetails = (ws, {room, lastJoinee}) => {
+  if (!ws) {
+    console.log("No ws");
+    return;
+  }
+  ws?.send(
     JSON.stringify({
       type: "roomDetailShared",
       ...room,
+      lastJoinee
     })
   );
 };
 
 exports.emitChangingBoardState = (ws, board) => {
-  ws.send(
+  if (!ws) {
+    console.log("No ws");
+    return;
+  }
+  ws?.send(
     JSON.stringify({
       type: "boardChanged",
       board,
@@ -16,17 +25,25 @@ exports.emitChangingBoardState = (ws, board) => {
   );
 };
 
-exports.emitSavedBoardState = (ws, board) => {
-  ws.send(
+exports.emitSavedBoardState = (ws, data) => {
+  if (!ws) {
+    console.log("No ws");
+    return;
+  }
+  ws?.send(
     JSON.stringify({
       type: "boardSaved",
-      board,
+      ...data,
     })
   );
 };
 
 exports.emitMemberJoined = (ws, member) => {
-  ws.send(
+  if (!ws) {
+    console.log("No ws");
+    return;
+  }
+  ws?.send(
     JSON.stringify({
       type: "memberJoined",
       member,
@@ -35,10 +52,28 @@ exports.emitMemberJoined = (ws, member) => {
 };
 
 exports.emitGameStarted = (ws, roomId) => {
-  ws.send(
+  if (!ws) {
+    console.log("No ws");
+    return;
+  }
+  ws?.send(
     JSON.stringify({
       type: "gameStarted",
       roomId,
     })
   );
 };
+
+
+exports.emitMemberSubmitted = (ws, data) => {
+  if (!ws) {
+    console.log("No ws");
+    return;
+  }
+  ws?.send(
+    JSON.stringify({
+      type: "memberSubmitted",
+      ...data,
+    })
+  );
+}

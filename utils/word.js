@@ -14,27 +14,27 @@ exports.areWordsValid = (words, callback) => {
 
   console.log("Checking word...");
 
-  let checkedWords = words.reduce((acc, word) => {
-    acc[word.toLowerCase()] = false;
-    return acc;
-  }, {});
+  const validWords = [];
+
+  // let checkedWords = words.reduce((acc, word) => {
+  //   acc[word.toLowerCase()] = false;
+  //   return acc;
+  // }, {});
 
   rl.on("line", (line) => {
     linesRead++;
     let sourceWord = line.trim().toLowerCase();
 
-    if (checkedWords[sourceWord] === false) {
-      checkedWords[sourceWord] = true;
-
-      if (Object.values(checkedWords).every((value) => value)) {
-        rl.close();
+    words.forEach((word) => {
+      if (word.includes(sourceWord)) {
+        validWords.push(sourceWord);
       }
-    }
+    });
   });
 
   rl.on("close", () => {
     console.log("Lines read:", linesRead);
-    callback(checkedWords);
+    callback(validWords);
   });
 
   rl.on("error", (err) => {
@@ -45,7 +45,9 @@ exports.areWordsValid = (words, callback) => {
 
 exports.getValidWordsFromBoard = (originalBoard) => {
   const board = [...originalBoard.map((row) => [...row])];
+
   let stringRev = "";
+
   for (let i = 0; i < board.length; i++) {
     let stringRow = "";
     for (let j = 0; j < board[i].length; j++) {
@@ -53,12 +55,10 @@ exports.getValidWordsFromBoard = (originalBoard) => {
     }
     stringRev += stringRow.split("").reverse().join("") + " ";
   }
+
   const rawString = [
     board.map((row) => row.join("")).join(" "),
-    board
-      .map((row) => row.join(""))
-      .reverse()
-      .join(" "),
+    board.map((row) => row.reverse().join("")).join(" "),
     board
       .reduce((acc, row) => {
         row.forEach((col, index) => {
@@ -76,10 +76,13 @@ exports.getValidWordsFromBoard = (originalBoard) => {
     .split(/[^a-zA-Z]/)
     .filter((word) => word.length > 1);
 
-    return new Promise((resolve, reject) => {
-      this.areWordsValid(words, (isValid) => {
-        resolve(isValid);
-      });
-    });
+  console.log("words");
 
+  console.log(words);
+
+  return new Promise((resolve, reject) => {
+    this.areWordsValid(words, (validWords) => {
+      resolve(validWords);
+    });
+  });
 };

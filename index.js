@@ -7,6 +7,8 @@ const { getValidWordsFromBoard } = require("./utils/word");
 const emitters = require("./socket/emitters");
 const receivers = require("./socket/receivers");
 
+const usersInLobby = receivers.usersInLobby;
+
 app.use(express.static("public"));
 app.use(express.json());
 
@@ -36,19 +38,17 @@ const server = app.listen(PORT, () => {
 
 const wss = new WebSocket.Server({ server });
 
-const usersInLobby = new Map();
-
 wss.on("connection", (ws) => {
   console.log("New client connected");
 
   ws.on("message", async (message) => {
     const data = JSON.parse(message);
+
     console.log("Received:", JSON.stringify(data));
 
     const { type } = data;
 
-    receivers.mapReceivers(ws, type, data);
-    
+    receivers.receiversMap(ws, type, data);
   });
 
   ws.on("close", async () => {
@@ -64,6 +64,8 @@ wss.on("connection", (ws) => {
 
     const userId = connection[0];
 
+    usersInLobby.delete(userId);
+
     const room = await getRoomByUserId(userId);
 
     if (room) {
@@ -73,21 +75,12 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        if (member === userId) {
-          ws.send(
-            JSON.stringify({
-              type: "leftRoom",
-            })
-          );
-        } else {
-          ws.send(
-            JSON.stringify({
-              type: "memberLeft",
-              member,
-            })
-          );
-        }
-        usersInLobby.delete(userId);
+        ws.send(
+          JSON.stringify({
+            type: "memberLeft",
+            member,
+          })
+        );
       });
     }
   });
@@ -117,6 +110,7 @@ app.post("/api/room/create", async (req, res) => {
     board: JSON.stringify([]),
     scores: JSON.stringify([]),
     usedWords: JSON.stringify([]),
+    createdAt: new Date().toISOString(),
   };
 
   await createRoom(room);
@@ -148,6 +142,10 @@ app.post("/api/room/startGame", (req, res) => {
   members.forEach((member) => {
     const ws = usersInLobby.get(member.userId);
     emitters.emitGameStarted(ws, roomId);
+  });
+
+  usersInLobby.forEach((ws, userId) => {
+    usersInLobby.delete(userId);
   });
 
   res.json({ message: "Game started" });

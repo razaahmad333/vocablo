@@ -9,6 +9,7 @@ const {
   query,
   where,
   doc,
+  orderBy,
   updateDoc,
 } = require("firebase/firestore");
 
@@ -20,13 +21,16 @@ const createRoom = async (room) => {
 };
 
 const getRoom = async (roomId, populateMembers = false) => {
-  const q = query(roomCollection, where("roomId", "==", roomId));
+  const q = query(roomCollection, where("roomId", "==", roomId), orderBy("createdAt"));
   const querySnapshot = await getDocs(q);
-  let room;
-  querySnapshot.forEach((doc) => {
-    room = doc.data();
-    room.id = doc.id;
-  });
+  let lastQS  = querySnapshot.docs.pop();
+  
+  if (!lastQS) {
+    throw new Error("Room not found");
+  }
+  const room = lastQS.data();
+  room.id = lastQS.id;
+  
   if (populateMembers) {
     const members = [];
     for (const memberId of room.members) {
@@ -35,7 +39,8 @@ const getRoom = async (roomId, populateMembers = false) => {
     }
     room.members = members;
     room.board = JSON.parse(room.board);
-    room.scores = JSON.parse(room.scores||"[]");
+    room.scores = JSON.parse(room.scores || "[]");
+    room.usedWords = JSON.parse(room.usedWords || "[]");
   }
   return room;
 };
@@ -47,13 +52,17 @@ const addMemberToRoom = async (roomId, userId) => {
   await updateDoc(roomRef, { members: room.members });
 };
 
-const updateBoard = async (roomId, board) => {
+const updateBoardAndScores = async (roomId, { board, scores, usedWords }) => {
   const room = await getRoom(roomId);
   const roomRef = doc(db, "rooms", room.id);
-  await updateDoc(roomRef, { board:JSON.stringify(board) });
+  await updateDoc(roomRef, {
+    board: JSON.stringify(board),
+    scores: JSON.stringify(scores),
+    usedWords: JSON.stringify(usedWords),
+  });
 };
 
-const getRoomByUserId = async (userId, populateMembers=false) => {
+const getRoomByUserId = async (userId, populateMembers = false) => {
   const q = query(roomCollection, where("members", "array-contains", userId));
   const querySnapshot = await getDocs(q);
   let room;
@@ -69,18 +78,16 @@ const getRoomByUserId = async (userId, populateMembers=false) => {
     }
     room.members = members;
     room.board = JSON.parse(room.board);
-    room.scores = JSON.parse(room.scores||"[]");
+    room.scores = JSON.parse(room.scores || "[]");
+    room.usedWords = JSON.parse(room.usedWords || "[]");
   }
   return room;
 };
-
-
-
 
 module.exports = {
   createRoom,
   getRoom,
   addMemberToRoom,
-  updateBoard,
+  updateBoardAndScores,
   getRoomByUserId,
 };
